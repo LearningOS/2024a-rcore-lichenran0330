@@ -14,24 +14,25 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
-/// The task manager, where all the tasks are managed.
+///任务管理器，管理所有任务。
 ///
-/// Functions implemented on `TaskManager` deals with all task state transitions
-/// and task context switching. For convenience, you can find wrappers around it
-/// in the module level.
+///在“TaskManager”上实现的功能处理所有任务状态转换
+///以及任务上下文切换。为了方便起见，你可以在它周围找到包装纸
+///在模块级别。
 ///
-/// Most of `TaskManager` are hidden behind the field `inner`, to defer
-/// borrowing checks to runtime. You can see examples on how to use `inner` in
-/// existing functions on `TaskManager`.
+///大多数“TaskManager”都隐藏在“内部”字段后面，以推迟
+///将支票借用到运行时。你可以看到如何在
+///TaskManager上的现有功能。
 pub struct TaskManager {
     /// total number of tasks
     num_app: usize,
@@ -54,6 +55,8 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            start_time: 0,
+            syscall_count: [0; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -80,6 +83,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.start_time = get_time_ms();
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -122,6 +126,9 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -168,4 +175,28 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// count syscall timer
+pub fn count_syscall(syscall_id: usize) {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].syscall_count[syscall_id] += 1;
+}
+
+/// 
+pub fn task_status() -> TaskStatus{
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].task_status
+}
+
+///
+pub fn start_time() -> usize {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].start_time
+}
+
+///
+pub fn syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let current_task = TASK_MANAGER.inner.exclusive_access().current_task;
+    TASK_MANAGER.inner.exclusive_access().tasks[current_task].syscall_count
 }
