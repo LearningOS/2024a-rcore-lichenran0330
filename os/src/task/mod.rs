@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::KERNEL_SPACE;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -201,4 +202,16 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Change the virt_mem thing
+pub fn change_virt_mem(virt_addr:*mut usize , something: usize) {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    inner.tasks[inner.current_task].memory_set.activate();
+    unsafe {
+        *virt_addr = something;
+    }
+    KERNEL_SPACE
+    .exclusive_access()
+    .activate();
 }
