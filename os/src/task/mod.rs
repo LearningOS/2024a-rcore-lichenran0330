@@ -15,8 +15,11 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
+use crate::config::MAX_SYSCALL_NUM;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -79,6 +82,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.start_time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -141,6 +145,9 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+            if 0 == inner.tasks[current].start_time {
+                inner.tasks[current].start_time = get_time_ms();
+            }
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -201,4 +208,49 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+///
+pub fn current_status() -> TaskStatus {
+    let task_manager_inner = TASK_MANAGER.inner.exclusive_access();
+    task_manager_inner.tasks[task_manager_inner.current_task].task_status
+}
+
+///
+pub fn current_systemcall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let task_manager_inner = TASK_MANAGER.inner.exclusive_access();
+    task_manager_inner.tasks[task_manager_inner.current_task].systemcall_times
+}
+
+///
+pub fn current_start_time() -> usize {
+    let task_manager_inner = TASK_MANAGER.inner.exclusive_access();
+    task_manager_inner.tasks[task_manager_inner.current_task].start_time
+}
+
+///
+pub fn current_systemcall_times_count(syscall_id: usize) {
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    let mut task_manager_inner = TASK_MANAGER.inner.exclusive_access();
+    task_manager_inner.tasks[current].systemcall_times[syscall_id] += 1;
+}
+
+///
+pub fn current_mmap(_start: usize, _len: usize, _port: usize) -> isize{
+    if _port & (!0x7) != 0 || _port & 0x7 == 0 {
+        return -1;
+    }
+    let start = VirtAddr::from(_start);
+    //start 未对齐
+    if start.page_offset() != 0 {
+        return -1;
+    }
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    let memory_set = &mut TASK_MANAGER.inner.exclusive_access().tasks[current].memory_set;
+    // 空间相交
+    if false == memory_set.check(VirtAddr::from(_start).floor(), VirtAddr::from(_start + _len).ceil()) {
+        return -1;
+    }
+    memory_set.insert_framed_area(_start.into(), (_start + _len).into(), MapPermission::from_bits(((_port << 1) & 0xff) as u8).unwrap() | MapPermission::U);
+    0
 }

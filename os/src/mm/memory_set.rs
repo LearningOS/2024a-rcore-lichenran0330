@@ -262,6 +262,17 @@ impl MemorySet {
             false
         }
     }
+    ///
+    pub fn check(&mut self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        if let Some(_) = self
+            .areas
+            .iter()
+            .find(|area| !(area.vpn_range.get_end() <= start || area.vpn_range.get_start() >= end))
+        {
+            return false;
+        }
+        return true;
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
