@@ -410,7 +410,3 @@ pub fn remap_test() {
         .executable(),);
     println!("remap_test passed!");
 }
-
-// pub fn exchange_token() {
-//     KERNEL_SPACE.exclusive_access().activate();
-// }

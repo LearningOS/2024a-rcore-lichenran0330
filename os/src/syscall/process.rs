@@ -46,8 +46,8 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     let us = crate::timer::get_time_us();
     let  sec = _ts as *mut usize;
     let usec = _ts as *mut usize;
-    change_virt_mem(sec, us / 1000);
-    change_virt_mem(usec.wrapping_add(8), us % 1000);
+    change_virt_mem(sec, us / 1_000);
+    change_virt_mem(usec.wrapping_add(8), us % 1_000);
     0
 }
 

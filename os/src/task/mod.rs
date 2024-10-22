@@ -211,7 +211,5 @@ pub fn change_virt_mem(virt_addr:*mut usize , something: usize) {
     unsafe {
         *virt_addr = something;
     }
-    KERNEL_SPACE
-    .exclusive_access()
-    .activate();
+    KERNEL_SPACE.exclusive_access().activate();
 }
