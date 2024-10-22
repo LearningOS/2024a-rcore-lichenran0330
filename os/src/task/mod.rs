@@ -15,11 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
-<<<<<<< HEAD
 use crate::mm::{MapPermission, VirtAddr};
-=======
-use crate::mm::KERNEL_SPACE;
->>>>>>> 286ed7355ef5b30bc241fdd048fa0d74bf560b2f
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
