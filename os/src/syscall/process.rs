@@ -42,6 +42,7 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
+<<<<<<< HEAD
     let us = get_time_us();
     let mut vec: alloc::vec::Vec<&mut [u8]> = translated_byte_buffer(current_user_token(), _ts as *const u8, core::mem::size_of::<TimeVal>());
     let (sec, usec) = (us / 1_000_000, us % 1_000_000);
@@ -49,6 +50,13 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     for (i, chunk) in vec.iter_mut().enumerate() {
         chunk.copy_from_slice(&time_byte[i * chunk.len()..(i + 1) * chunk.len()]);
     }
+=======
+    let us = crate::timer::get_time_us();
+    let  sec = _ts as *mut usize;
+    let usec = _ts as *mut usize;
+    change_virt_mem(sec, us / 1_000);
+    change_virt_mem(usec.wrapping_add(8), us % 1_000);
+>>>>>>> 286ed7355ef5b30bc241fdd048fa0d74bf560b2f
     0
 }
 
@@ -57,6 +65,7 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
+<<<<<<< HEAD
     let current_taskinfo = TaskInfo {
         status: current_status(),
         syscall_times: current_systemcall_times(),
@@ -69,19 +78,25 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     for (i, chunk) in vec.iter_mut().enumerate() {
         chunk.copy_from_slice(&taskinfo_byte[i * chunk.len()..(i + 1) * chunk.len()]);
     };
+=======
+>>>>>>> 286ed7355ef5b30bc241fdd048fa0d74bf560b2f
     0
 }
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+<<<<<<< HEAD
     current_mmap(_start, _len, _port)
+=======
+    0
+>>>>>>> 286ed7355ef5b30bc241fdd048fa0d74bf560b2f
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+    0
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
@@ -89,7 +104,7 @@ pub fn sys_sbrk(size: i32) -> isize {
     if let Some(old_brk) = change_program_brk(size) {
         old_brk as isize
     } else {
-        -1
+        0
     }
 }
 
