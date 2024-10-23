@@ -14,12 +14,12 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
-use crate::config::MAX_SYSCALL_NUM;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -236,7 +236,7 @@ pub fn current_systemcall_times_count(syscall_id: usize) {
 }
 
 ///
-pub fn current_mmap(_start: usize, _len: usize, _port: usize) -> isize{
+pub fn current_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     if _port & (!0x7) != 0 || _port & 0x7 == 0 {
         return -1;
     }
@@ -248,9 +248,30 @@ pub fn current_mmap(_start: usize, _len: usize, _port: usize) -> isize{
     let current = TASK_MANAGER.inner.exclusive_access().current_task;
     let memory_set = &mut TASK_MANAGER.inner.exclusive_access().tasks[current].memory_set;
     // 空间相交
-    if false == memory_set.check(VirtAddr::from(_start).floor(), VirtAddr::from(_start + _len).ceil()) {
+    if false
+        == memory_set.check(
+            VirtAddr::from(_start).floor(),
+            VirtAddr::from(_start + _len).ceil(),
+        )
+    {
         return -1;
     }
-    memory_set.insert_framed_area(_start.into(), (_start + _len).into(), MapPermission::from_bits(((_port << 1) & 0xff) as u8).unwrap() | MapPermission::U);
+    memory_set.insert_framed_area(
+        _start.into(),
+        (_start + _len).into(),
+        MapPermission::from_bits(((_port << 1) & 0xff) as u8).unwrap() | MapPermission::U,
+    );
     0
+}
+
+///
+pub fn current_munmap(_start: usize, _len: usize) -> isize {
+    let start = VirtAddr::from(_start);
+    //start 未对齐
+    if start.page_offset() != 0 {
+        return -1;
+    }
+    let current = TASK_MANAGER.inner.exclusive_access().current_task;
+    let memory_set = &mut TASK_MANAGER.inner.exclusive_access().tasks[current].memory_set;
+    memory_set.remove_framed_area(_start.into(), (_start + _len).into())
 }
