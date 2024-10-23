@@ -1,6 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
-use super::address::SimpleRange;
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -69,83 +68,44 @@ impl MemorySet {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         let vpn_range = VPNRange::new(start_vpn, end_vpn);
-        for vpn in vpn_range {
-            let mut p = false;
-            for area in &self.areas {
-                if area.vpn_range.get_end() > vpn && area.vpn_range.get_start() <= vpn {
-                    p = true;
-                }
-            }
-            if p == false {
+
+        for vpn in vpn_range.clone() {
+            if !self
+                .areas
+                .iter()
+                .any(|area| area.vpn_range.get_start() <= vpn && area.vpn_range.get_end() > vpn)
+            {
                 return -1;
             }
         }
-        let mut flag = true;
-        while flag {
-            flag = false;
-            let mut area_vpn_range: SimpleRange<VirtPageNum> =
-                SimpleRange::new(VirtPageNum::from(0), VirtPageNum::from(0));
-            let mut map_perm = MapPermission::from_bits(0).unwrap();
+
+        while let Some((i, area)) = self.areas.iter_mut().enumerate().find(|(_, area)| {
+            area.vpn_range.get_start() < vpn_range.get_end()
+                && area.vpn_range.get_end() > vpn_range.get_start()
+        }) {
+            let map_perm = area.map_perm;
             let page_table = &mut self.page_table;
-            for (i, area) in &mut self.areas.iter_mut().enumerate() {
-                if !(area.vpn_range.get_end() <= vpn_range.get_start()
-                    || area.vpn_range.get_start() >= vpn_range.get_end())
-                {
-                    area_vpn_range = area.vpn_range;
-                    map_perm = area.map_perm;
-                    area.unmap(page_table);
-                    self.areas.remove(i);
-                    flag = true;
-                    break;
-                }
-            }
-            if !flag {
-                break;
-            }
-            if area_vpn_range.get_start() >= vpn_range.get_start()
-                && area_vpn_range.get_end() <= vpn_range.get_end()
-            {
-                continue;
-            } else if area_vpn_range.get_end() <= vpn_range.get_start()
-                && area_vpn_range.get_end() >= vpn_range.get_end()
-            {
-                if area_vpn_range.get_start() != vpn_range.get_start() {
-                    self.push(
-                        MapArea::new(
-                            area_vpn_range.get_start().into(),
-                            vpn_range.get_start().into(),
-                            MapType::Framed,
-                            map_perm,
-                        ),
-                        None,
-                    );
-                }
-                if vpn_range.get_end() != area_vpn_range.get_end() {
-                    self.push(
-                        MapArea::new(
-                            vpn_range.get_end().into(),
-                            area_vpn_range.get_end().into(),
-                            MapType::Framed,
-                            map_perm,
-                        ),
-                        None,
-                    );
-                }
-            } else if vpn_range.get_start() <= area_vpn_range.get_start() {
+            let area_vpn_range = area.vpn_range;
+            area.unmap(page_table);
+            self.areas.remove(i);
+
+            if area_vpn_range.get_start() < vpn_range.get_start() {
                 self.push(
                     MapArea::new(
-                        vpn_range.get_end().into(),
-                        area_vpn_range.get_end().into(),
+                        area_vpn_range.get_start().into(),
+                        vpn_range.get_start().into(),
                         MapType::Framed,
                         map_perm,
                     ),
                     None,
                 );
-            } else {
+            }
+
+            if area_vpn_range.get_end() > vpn_range.get_end() {
                 self.push(
                     MapArea::new(
-                        area_vpn_range.get_start().into(),
-                        vpn_range.get_start().into(),
+                        vpn_range.get_end().into(),
+                        area_vpn_range.get_end().into(),
                         MapType::Framed,
                         map_perm,
                     ),
