@@ -125,6 +125,17 @@ impl MemorySet {
         }
         0
     }
+    ///
+    pub fn check(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        if let Some(_) = self
+            .areas
+            .iter()
+            .find(|area| !(area.vpn_range.get_end() <= start || area.vpn_range.get_start() >= end))
+        {
+            return false;
+        }
+        return true;
+    }
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
     /// space.

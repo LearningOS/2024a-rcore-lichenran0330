@@ -4,11 +4,12 @@ use alloc::sync::Arc;
 use crate::{
     config::MAX_SYSCALL_NUM,
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_refmut, translated_str, translated_byte_buffer, VirtAddr, MapPermission},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, TaskStatus,
     },
+    timer::{get_time_us, get_time_ms},
 };
 
 #[repr(C)]
@@ -79,7 +80,11 @@ pub fn sys_exec(path: *const u8) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    trace!("kernel::pid[{}] sys_waitpid [{}]", current_task().unwrap().pid.0, pid);
+    trace!(
+        "kernel::pid[{}] sys_waitpid [{}]",
+        current_task().unwrap().pid.0,
+        pid
+    );
     let task = current_task().unwrap();
     // find a child process
 
@@ -138,10 +143,17 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
+    let task_control_block = current_task().unwrap();
+    let inner = task_control_block.inner_exclusive_access();
+    // 提前将所需的数据提取到局部变量中，解除对 inner 的借用
+    let task_status = inner.task_status;
+    let syscall_times = inner.syscall_times;
+    let start_time = inner.start_time;
+    drop(inner);
     let current_taskinfo = TaskInfo {
-        status: current_status(),
-        syscall_times: current_systemcall_times(),
-        time: get_time_ms() - current_start_time(),
+        status: task_status,
+        syscall_times: syscall_times,
+        time: get_time_ms() - start_time,
     };
     let taskinfo_byte = unsafe {
         core::slice::from_raw_parts(
@@ -162,13 +174,45 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    current_mmap(_start, _len, _port)
+    if _port & (!0x7) != 0 || _port & 0x7 == 0 {
+        return -1;
+    }
+    let start = VirtAddr::from(_start);
+    //start 未对齐
+    if start.page_offset() != 0 {
+        return -1;
+    }
+    let task_control_block = current_task().unwrap();
+    let inner = &mut task_control_block.inner_exclusive_access();
+    let memory_set = &mut inner.memory_set;
+    // 空间相交
+    if false
+        == memory_set.check(
+            VirtAddr::from(_start).floor(),
+            VirtAddr::from(_start + _len).ceil(),
+        )
+    {
+        return -1;
+    }
+    memory_set.insert_framed_area(
+        _start.into(),
+        (_start + _len).into(),
+        MapPermission::from_bits(((_port << 1) & 0xff) as u8).unwrap() | MapPermission::U,
+    );
+    0
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    current_munmap(_start, _len)
+    let start = VirtAddr::from(_start);
+    //start 未对齐
+    if start.page_offset() != 0 {
+        return -1;
+    }
+    let task_control_block = current_task().unwrap();
+    let memory_set = &mut task_control_block.inner_exclusive_access().memory_set;
+    memory_set.remove_framed_area(_start.into(), (_start + _len).into())
 }
 
 /// change data segment size
