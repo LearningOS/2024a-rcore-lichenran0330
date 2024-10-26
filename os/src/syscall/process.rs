@@ -118,40 +118,57 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
+    trace!("kernel: sys_get_time");
+    let us = get_time_us();
+    let mut vec: alloc::vec::Vec<&mut [u8]> = translated_byte_buffer(
+        current_user_token(),
+        _ts as *const u8,
+        core::mem::size_of::<TimeVal>(),
     );
-    -1
+    let (sec, usec) = (us / 1_000_000, us % 1_000_000);
+    let time_byte = [sec.to_le_bytes(), usec.to_le_bytes()].concat();
+    for (i, chunk) in vec.iter_mut().enumerate() {
+        chunk.copy_from_slice(&time_byte[i * chunk.len()..(i + 1) * chunk.len()]);
+    }
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
+    trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
+    let current_taskinfo = TaskInfo {
+        status: current_status(),
+        syscall_times: current_systemcall_times(),
+        time: get_time_ms() - current_start_time(),
+    };
+    let taskinfo_byte = unsafe {
+        core::slice::from_raw_parts(
+            &current_taskinfo as *const TaskInfo as *const u8,
+            core::mem::size_of::<TaskInfo>(),
+        )
+    };
+    let mut vec: alloc::vec::Vec<&mut [u8]> = translated_byte_buffer(
+        current_user_token(),
+        _ti as *const u8,
+        core::mem::size_of::<TaskInfo>(),
     );
-    -1
+    for (i, chunk) in vec.iter_mut().enumerate() {
+        chunk.copy_from_slice(&taskinfo_byte[i * chunk.len()..(i + 1) * chunk.len()]);
+    }
+    0
 }
-
-/// YOUR JOB: Implement mmap.
+// YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    current_mmap(_start, _len, _port)
 }
 
-/// YOUR JOB: Implement munmap.
+// YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    current_munmap(_start, _len)
 }
 
 /// change data segment size
