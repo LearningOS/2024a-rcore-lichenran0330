@@ -60,58 +60,21 @@ impl MemorySet {
             None,
         );
     }
-    ///
-    pub fn remove_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
-        let vpn_range = VPNRange::new(start_vpn, end_vpn);
-
-        for vpn in vpn_range.clone() {
-            if !self
-                .areas
-                .iter()
-                .any(|area| area.vpn_range.get_start() <= vpn && area.vpn_range.get_end() > vpn)
-            {
-                return -1;
-            }
+    /// remove a area
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
+        if let Some((idx, area)) = self
+            .areas
+            .iter_mut()
+            .enumerate()
+            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
+        {
+            area.unmap(&mut self.page_table);
+            self.areas.remove(idx);
         }
-
-        while let Some((i, area)) = self.areas.iter_mut().enumerate().find(|(_, area)| {
-            area.vpn_range.get_start() < vpn_range.get_end()
-                && area.vpn_range.get_end() > vpn_range.get_start()
-        }) {
-            let map_perm = area.map_perm;
-            let page_table = &mut self.page_table;
-            let area_vpn_range = area.vpn_range;
-            area.unmap(page_table);
-            self.areas.remove(i);
-
-            if area_vpn_range.get_start() < vpn_range.get_start() {
-                self.push(
-                    MapArea::new(
-                        area_vpn_range.get_start().into(),
-                        vpn_range.get_start().into(),
-                        MapType::Framed,
-                        map_perm,
-                    ),
-                    None,
-                );
-            }
-
-            if area_vpn_range.get_end() > vpn_range.get_end() {
-                self.push(
-                    MapArea::new(
-                        vpn_range.get_end().into(),
-                        area_vpn_range.get_end().into(),
-                        MapType::Framed,
-                        map_perm,
-                    ),
-                    None,
-                );
-            }
-        }
-        0
     }
+    /// Add a new MapArea into this MemorySet.
+    /// Assuming that there are no conflicts in the virtual address
+    /// space.
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
