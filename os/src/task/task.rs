@@ -1,10 +1,10 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
-use crate::fs::{File, Stdin, Stdout};
+use crate::config::{BIGSTRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -71,6 +71,18 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    ///
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    ///
+    pub start_time: usize,
+
+    ///
+    pub stride: isize,
+
+    ///
+    pub pass: isize,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +147,10 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: 0,
+                    stride: 0,
+                    pass: BIGSTRIDE / 16,
                 })
             },
         };
@@ -165,6 +181,13 @@ impl TaskControlBlock {
         inner.memory_set = memory_set;
         // update trap_cx ppn
         inner.trap_cx_ppn = trap_cx_ppn;
+        // initialize base_size
+        inner.base_size = user_sp;
+
+        inner.syscall_times = [0; MAX_SYSCALL_NUM];
+
+        inner.start_time = get_time_ms();
+
         // initialize trap_cx
         let trap_cx = TrapContext::app_init_context(
             entry_point,
@@ -173,8 +196,6 @@ impl TaskControlBlock {
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
-        *inner.get_trap_cx() = trap_cx;
-        // **** release current PCB
     }
 
     /// parent process fork the child process
@@ -216,6 +237,10 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: 0,
+                    stride: 0,
+                    pass: BIGSTRIDE / 16,
                 })
             },
         });

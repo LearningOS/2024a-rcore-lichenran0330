@@ -3,13 +3,13 @@
 use alloc::sync::Arc;
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
-    fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str},
+    config::{BIGSTRIDE, MAX_SYSCALL_NUM},
+    loader::get_app_data_by_name,
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
+        add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskControlBlock, TaskStatus
     },
+    timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -166,19 +166,39 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let current_task = current_task().unwrap();
+        let new_task = Arc::new(TaskControlBlock::new(data));
+        let new_pid = new_task.pid.0;
+        new_task.inner_exclusive_access().parent = Some(Arc::downgrade(&current_task));
+        current_task.inner_exclusive_access().children.push(new_task.clone());
+        add_task(new_task.clone());
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
+// syscall ID：140
+// 设置当前进程优先级为 prio
+// 参数：prio 进程优先级，要求 prio >= 2
+// 返回值：如果输入合法则返回 prio，否则返回 -1
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio < 2 {
+        return -1;
+    }
+    current_task().unwrap().inner_exclusive_access().pass = BIGSTRIDE / prio;
+    prio
 }
