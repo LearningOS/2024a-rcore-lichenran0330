@@ -62,6 +62,7 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            task_inner.stride += task_inner.pass;
             if 0 == task_inner.start_time {
                 task_inner.start_time = get_time_ms();
             }

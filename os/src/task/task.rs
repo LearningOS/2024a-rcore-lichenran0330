@@ -1,9 +1,10 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::{TRAP_CONTEXT_BASE, MAX_SYSCALL_NUM};
+use crate::config::{BIGSTRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
@@ -74,6 +75,12 @@ pub struct TaskControlBlockInner {
 
     ///
     pub start_time: usize,
+
+    ///
+    pub stride: isize,
+
+    ///
+    pub pass: isize,
 }
 
 impl TaskControlBlockInner {
@@ -126,6 +133,8 @@ impl TaskControlBlock {
                     program_brk: user_sp,
                     syscall_times: [0; MAX_SYSCALL_NUM],
                     start_time: 0,
+                    stride: 0,
+                    pass: BIGSTRIDE / 16,
                 })
             },
         };
@@ -158,6 +167,11 @@ impl TaskControlBlock {
         inner.trap_cx_ppn = trap_cx_ppn;
         // initialize base_size
         inner.base_size = user_sp;
+
+        inner.syscall_times = [0; MAX_SYSCALL_NUM];
+
+        inner.start_time = get_time_ms();
+
         // initialize trap_cx
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
@@ -167,7 +181,6 @@ impl TaskControlBlock {
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
-        // **** release inner automatically
     }
 
     /// parent process fork the child process
@@ -201,6 +214,8 @@ impl TaskControlBlock {
                     program_brk: parent_inner.program_brk,
                     syscall_times: [0; MAX_SYSCALL_NUM],
                     start_time: 0,
+                    stride: 0,
+                    pass: BIGSTRIDE / 16,
                 })
             },
         });
