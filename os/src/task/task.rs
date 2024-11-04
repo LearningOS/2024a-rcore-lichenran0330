@@ -5,7 +5,6 @@ use crate::config::{BIGSTRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
-use crate::timer::get_time_ms;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -187,7 +186,7 @@ impl TaskControlBlock {
 
         inner.syscall_times = [0; MAX_SYSCALL_NUM];
 
-        inner.start_time = get_time_ms();
+        inner.start_time = 0;
 
         // initialize trap_cx
         let trap_cx = TrapContext::app_init_context(
@@ -258,6 +257,14 @@ impl TaskControlBlock {
         // ---- release parent PCB
     }
 
+    ///
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<TaskControlBlock>{
+        let mut parent_inner = self.inner_exclusive_access();
+        let new_task = Arc::new(TaskControlBlock::new(elf_data));
+        new_task.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        parent_inner.children.push(new_task.clone());
+        new_task
+    }
     /// get pid of process
     pub fn getpid(&self) -> usize {
         self.pid.0

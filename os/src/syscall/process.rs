@@ -7,10 +7,7 @@ use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, 
-        // TaskControlBlock, 
-        TaskStatus,
+        add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus
     },
     timer::{get_time_ms, get_time_us},
 };
@@ -234,20 +231,12 @@ pub fn sys_spawn(path: *const u8) -> isize {
     let path = translated_str(token, path);
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let data = app_inode.read_all();
-        let current_task = current_task().unwrap();
-        let new_task = current_task.fork();
+        let current_task = &current_task().unwrap();
+        let new_task = current_task.spawn(data.as_slice());
         let new_pid = new_task.pid.0;
-        new_task.exec(data.as_slice());
+
+        add_task(new_task);
         new_pid as isize
-        // let new_task = Arc::new(TaskControlBlock::new(data.as_slice()));
-        // let new_pid = new_task.pid.0;
-        // new_task.inner_exclusive_access().parent = Some(Arc::downgrade(&current_task));
-        // current_task
-        //     .inner_exclusive_access()
-        //     .children
-        //     .push(new_task.clone());
-        // add_task(new_task);
-        // new_pid as isize
     } else {
         -1
     }
