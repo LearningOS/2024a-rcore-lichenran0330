@@ -2,6 +2,7 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::{BIGSTRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
+use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
@@ -196,6 +197,7 @@ impl TaskControlBlock {
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        *inner.get_trap_cx() = trap_cx;
     }
 
     /// parent process fork the child process

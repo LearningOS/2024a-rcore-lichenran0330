@@ -1,4 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -77,6 +78,69 @@ impl MemorySet {
             area.unmap(&mut self.page_table);
             self.areas.remove(idx);
         }
+    }
+    ///
+    pub fn remove_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        let vpn_range = VPNRange::new(start_vpn, end_vpn);
+
+        for vpn in vpn_range.clone() {
+            if !self
+                .areas
+                .iter()
+                .any(|area| area.vpn_range.get_start() <= vpn && area.vpn_range.get_end() > vpn)
+            {
+                return -1;
+            }
+        }
+
+        while let Some((i, area)) = self.areas.iter_mut().enumerate().find(|(_, area)| {
+            area.vpn_range.get_start() < vpn_range.get_end()
+                && area.vpn_range.get_end() > vpn_range.get_start()
+        }) {
+            let map_perm = area.map_perm;
+            let page_table = &mut self.page_table;
+            let area_vpn_range = area.vpn_range;
+            area.unmap(page_table);
+            self.areas.remove(i);
+
+            if area_vpn_range.get_start() < vpn_range.get_start() {
+                self.push(
+                    MapArea::new(
+                        area_vpn_range.get_start().into(),
+                        vpn_range.get_start().into(),
+                        MapType::Framed,
+                        map_perm,
+                    ),
+                    None,
+                );
+            }
+
+            if area_vpn_range.get_end() > vpn_range.get_end() {
+                self.push(
+                    MapArea::new(
+                        vpn_range.get_end().into(),
+                        area_vpn_range.get_end().into(),
+                        MapType::Framed,
+                        map_perm,
+                    ),
+                    None,
+                );
+            }
+        }
+        0
+    }
+    ///
+    pub fn check(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        if let Some(_) = self
+            .areas
+            .iter()
+            .find(|area| !(area.vpn_range.get_end() <= start || area.vpn_range.get_start() >= end))
+        {
+            return false;
+        }
+        return true;
     }
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
