@@ -6,6 +6,7 @@ use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
+use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -65,6 +66,8 @@ pub struct TaskControlBlockInner {
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    pub fd_name: Vec<String>,
+    
 
     /// Heap bottom
     pub heap_bottom: usize,
@@ -103,6 +106,7 @@ impl TaskControlBlockInner {
             fd
         } else {
             self.fd_table.push(None);
+            self.fd_name.push(String::new());
             self.fd_table.len() - 1
         }
     }
@@ -144,6 +148,11 @@ impl TaskControlBlock {
                         Some(Arc::new(Stdout)),
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
+                    ],
+                    fd_name: vec![
+                        "Stdin\0".to_string(),
+                        "Stdout\0".to_string(),
+                        "Stdout\0".to_string(),
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
@@ -215,12 +224,16 @@ impl TaskControlBlock {
         let kernel_stack_top = kernel_stack.get_top();
         // copy fd table
         let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        let mut new_fd_name: Vec<String> = Vec::new();
         for fd in parent_inner.fd_table.iter() {
             if let Some(file) = fd {
                 new_fd_table.push(Some(file.clone()));
             } else {
                 new_fd_table.push(None);
             }
+        }
+        for name in &parent_inner.fd_name {
+            new_fd_name.push(name.clone());
         }
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
@@ -236,6 +249,7 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    fd_name: new_fd_name,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                     syscall_times: [0; MAX_SYSCALL_NUM],
@@ -258,7 +272,7 @@ impl TaskControlBlock {
     }
 
     ///
-    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<TaskControlBlock>{
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
         let mut parent_inner = self.inner_exclusive_access();
         let new_task = Arc::new(TaskControlBlock::new(elf_data));
         new_task.inner_exclusive_access().parent = Some(Arc::downgrade(self));
