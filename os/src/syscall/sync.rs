@@ -40,12 +40,11 @@ pub fn deadlock_detect(i: usize, id: usize, tid: usize) -> bool {
         return true;
     }
     let mut available = process_inner.available[i].clone();
-    let mut allocation = process_inner.allocation[i].clone();
-    let need = process_inner.need[i].clone();
+    let allocation = process_inner.allocation[i].clone();
+    let mut need = process_inner.need[i].clone();
     drop(process_inner);
     drop(process);
-    allocation[tid][id] += 1;
-    available[id] -= 1;
+    need[tid][id] += 1;
     let mut used = Vec::new();
     while used.len() < allocation.len() {
         used.push(false);
@@ -74,7 +73,6 @@ pub fn deadlock_detect(i: usize, id: usize, tid: usize) -> bool {
     }
     for i in used {
         if i == false {
-            println!("this is false ok??????????????????");
             return false;
         }
     }
@@ -163,7 +161,6 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     match deadlock_detect(0, mutex_id, tid) {
         false => -0xdead,
         true => {
-            current_process().inner_exclusive_access().allocation[0][tid][mutex_id] += 1;
             mutex.lock(tid, mutex_id);
             0
         }
@@ -276,10 +273,7 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     match deadlock_detect(1, sem_id, tid) {
-        false => {
-            println!("this is sys_semaphore_down false");
-            return -0xdead
-        },
+        false => -0xdead,
         true => {
             sem.down(tid, sem_id);
             0
